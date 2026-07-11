@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Loupe
+GenericName=Screen Magnifier
+Comment=Freeze-frame screen magnifier: lens on the cursor for reading small text
+Exec=loupe-toggle
+Icon=edit-find
+Terminal=false
+Categories=Utility;Accessibility;
+Keywords=magnifier;zoom;lens;loupe;

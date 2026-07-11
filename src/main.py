@@ -1,12 +1,13 @@
 """loupe entry point: a freeze-frame screen magnifier.
 
-Flow: acquire the single-instance pidfile (or toggle off a running instance),
-grab a silent full-screen screenshot, open a fullscreen Gtk.Application window
-showing that frozen image, and draw a magnifier lens centered on the cursor.
-Esc / click / Ctrl+Q / a second Super+Z all dismiss it.
+Flow: grab a silent full-screen screenshot, open a maximized Gtk.Application
+window showing that frozen image, and draw a magnifier lens centered on the
+cursor. Esc / click / Ctrl+Q / SIGTERM all dismiss it.
 
-Usage: loupe.py
-On COSMIC, bind Super+Z to run this script; a second Super+Z toggles it off.
+Usage: run via `loupe-toggle` (bind it to Super+Z on COSMIC), which starts
+this as a transient systemd user unit named "loupe" — the unit name is the
+single-instance lock, a second toggle stops the unit (SIGTERM), and stderr
+lands in `journalctl --user -u loupe`.
 """
 from __future__ import annotations
 
@@ -25,12 +26,7 @@ from gi.repository import Gio, GLib, Gtk  # noqa: E402
 # separate `capture`/`click`/`ui`/`lifecycle` namespace to qualify against.
 from capture import grab_screenshot  # noqa: E402
 from click import VirtualPointer  # noqa: E402
-from lifecycle import (  # noqa: E402
-    acquire_pidfile_or_toggle,
-    fail,
-    install_signal_handlers,
-    release_pidfile,
-)
+from lifecycle import fail, install_signal_handlers  # noqa: E402
 from ui import LoupeWindow  # noqa: E402
 
 APP_ID = "dev.andrzey.loupe"
@@ -47,14 +43,10 @@ CLICK_SETTLE_MS = 150
 
 
 def main(argv: list[str]) -> int:
-    if not acquire_pidfile_or_toggle():
-        return 0
-
     try:
         texture = grab_screenshot()
     except Exception as exc:  # noqa: BLE001 — surface any capture failure cleanly
         fail("screen capture failed", hint=str(exc))
-        release_pidfile()
         return 1
 
     # Best-effort virtual pointer for click-through. Created up front so the
@@ -77,7 +69,6 @@ def main(argv: list[str]) -> int:
         cleaned_up = True
         if pointer is not None:
             pointer.close()
-        release_pidfile()
         app.quit()
 
     def on_activate(a):

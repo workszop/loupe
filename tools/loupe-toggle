@@ -1,0 +1,11 @@
+#!/bin/sh
+# Toggle the loupe screen magnifier. Bind this to Super+Z.
+#
+# Runs loupe as a transient systemd user unit: the unit name is the
+# single-instance lock, a second toggle stops it (SIGTERM -> clean exit),
+# --collect reaps failed runs, and stderr is in `journalctl --user -u loupe`.
+
+if systemctl --user is-active --quiet loupe.service; then
+    exec systemctl --user stop loupe.service
+fi
+exec systemd-run --user --unit=loupe --collect --quiet "$HOME/.local/bin/loupe"

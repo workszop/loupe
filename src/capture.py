@@ -25,9 +25,12 @@ def grab_screenshot() -> Gdk.Texture:
     Raises RuntimeError if the screenshot tool fails or produces no file.
     """
     # The texture holds its own decoded copy, so the temp PNG + dir can be
-    # dropped as soon as it is loaded.
+    # dropped as soon as it is loaded. Prefer XDG_RUNTIME_DIR (tmpfs) — /tmp
+    # is on disk on this system, and the PNG never needs to touch disk.
     with tempfile.TemporaryDirectory(
-        prefix="loupe-shot-", ignore_cleanup_errors=True
+        prefix="loupe-shot-",
+        dir=os.environ.get("XDG_RUNTIME_DIR"),
+        ignore_cleanup_errors=True,
     ) as tmpdir:
         result = subprocess.run(
             [
