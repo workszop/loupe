@@ -18,12 +18,13 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gio", "2.0")
 gi.require_version("GLib", "2.0")
 
-from gi.repository import Gio, Gtk  # noqa: E402
+from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 # NOTE: `from X import name` (not `import X`) deliberately — after
 # tools/build.py bundles the src modules into one flat loupe.py, there is no
-# separate `capture`/`ui`/`lifecycle` namespace to qualify against.
+# separate `capture`/`click`/`ui`/`lifecycle` namespace to qualify against.
 from capture import grab_screenshot  # noqa: E402
+from click import VirtualPointer  # noqa: E402
 from lifecycle import (  # noqa: E402
     acquire_pidfile_or_toggle,
     fail,
@@ -33,6 +34,10 @@ from lifecycle import (  # noqa: E402
 from ui import LoupeWindow  # noqa: E402
 
 APP_ID = "dev.andrzey.loupe"
+
+# Delay after hiding the loupe window before firing the synthetic click, so the
+# compositor re-routes pointer focus to the window underneath first.
+CLICK_THROUGH_DELAY_MS = 130
 
 
 def main(argv: list[str]) -> int:
@@ -46,6 +51,16 @@ def main(argv: list[str]) -> int:
         release_pidfile()
         return 1
 
+    # Best-effort virtual pointer for click-through. Created up front so the
+    # compositor registers it before the first click; if uinput/evdev is
+    # unavailable, clicking falls back to plain dismiss and reading still works.
+    try:
+        pointer = VirtualPointer()
+    except Exception as exc:  # noqa: BLE001
+        pointer = None
+        print(f"loupe: click-through unavailable ({exc}); clicks will dismiss.",
+              file=sys.stderr)
+
     app = Gtk.Application(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
     state = {"cleaned_up": False}
 
@@ -53,13 +68,36 @@ def main(argv: list[str]) -> int:
         if state["cleaned_up"]:
             return
         state["cleaned_up"] = True
+        if pointer is not None:
+            pointer.close()
         release_pidfile()
         app.quit()
 
     def on_activate(a):
         install_signal_handlers(cleanup)
-        window = LoupeWindow(application=a, texture=texture, on_quit=cleanup)
+
+        window = LoupeWindow(
+            application=a,
+            texture=texture,
+            on_quit=cleanup,
+            on_click_through=(None if pointer is None else lambda: click_through(window)),
+        )
         window.present()
+
+    def click_through(window):
+        # Hide the loupe so the synthetic click lands on the app underneath,
+        # let pointer focus settle, then click at the (unchanged) cursor spot.
+        window.set_visible(False)
+
+        def fire():
+            try:
+                pointer.click("left")
+            except Exception as exc:  # noqa: BLE001
+                fail("click failed", hint=str(exc))
+            cleanup()
+            return GLib.SOURCE_REMOVE
+
+        GLib.timeout_add(CLICK_THROUGH_DELAY_MS, fire)
 
     app.connect("activate", on_activate)
     return app.run(None)

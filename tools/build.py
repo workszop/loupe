@@ -19,7 +19,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 OUTPUT = ROOT / "loupe.py"
 
-MODULE_ORDER = ["lifecycle", "capture", "ui", "main"]
+MODULE_ORDER = ["lifecycle", "capture", "click", "ui", "main"]
 SIBLING_NAMES = set(MODULE_ORDER)
 
 ENTRYPOINT_MODULE = "main"  # its docstring becomes loupe.py's; its __main__

@@ -174,10 +174,13 @@ class LensWidget(Gtk.Widget):
 
 
 class LoupeWindow(Gtk.ApplicationWindow):
-    def __init__(self, *, application, texture, on_quit):
+    def __init__(self, *, application, texture, on_quit, on_click_through=None):
         super().__init__(application=application)
         self.texture = texture
         self.on_quit = on_quit
+        # on_click_through(): dismiss the loupe and fire a real click where the
+        # cursor is aimed. If None, a left click just dismisses (no synthesis).
+        self.on_click_through = on_click_through
 
         self.cursor_pos: tuple[float, float] | None = None
         self.zoom = ZOOM_DEFAULT
@@ -207,6 +210,7 @@ class LoupeWindow(Gtk.ApplicationWindow):
         self.add_controller(scroll)
 
         click = Gtk.GestureClick.new()
+        click.set_button(0)  # 0 = listen for any button, branch in the handler
         click.connect("released", self._on_click_released)
         self.add_controller(click)
 
@@ -242,8 +246,14 @@ class LoupeWindow(Gtk.ApplicationWindow):
             self.zoom_out()
         return True
 
-    def _on_click_released(self, _gesture, _n_press, _x, _y):
-        self.on_quit()
+    def _on_click_released(self, gesture, _n_press, _x, _y):
+        button = gesture.get_current_button()
+        # Left click (1): act on the target under the cursor, then dismiss.
+        # Any other button (e.g. right): just dismiss (cancel).
+        if button == 1 and self.on_click_through is not None:
+            self.on_click_through()
+        else:
+            self.on_quit()
 
     def _on_close_request(self, _window):
         self.on_quit()

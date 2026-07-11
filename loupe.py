@@ -17,6 +17,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 import gi
 
@@ -159,6 +160,41 @@ def grab_screenshot() -> Gdk.Texture:
                 os.remove(os.path.join(tmpdir, f))
             os.rmdir(tmpdir)
         except OSError:
+            pass
+
+
+# ==== src/click.py ====
+class VirtualPointer:
+    """A uinput virtual pointer that can emit a click at the current position.
+
+    Construction raises (ImportError / OSError / PermissionError) if evdev is
+    missing or /dev/uinput is not writable; callers should treat clicking as
+    unavailable in that case.
+    """
+
+    def __init__(self) -> None:
+        from evdev import UInput
+        from evdev import ecodes as e
+
+        self._e = e
+        self._ui = UInput(
+            {e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT], e.EV_REL: [e.REL_X, e.REL_Y]},
+            name="loupe-virtual-pointer",
+        )
+
+    def click(self, button: str = "left") -> None:
+        e = self._e
+        code = e.BTN_RIGHT if button == "right" else e.BTN_LEFT
+        self._ui.write(e.EV_KEY, code, 1)
+        self._ui.syn()
+        time.sleep(0.02)
+        self._ui.write(e.EV_KEY, code, 0)
+        self._ui.syn()
+
+    def close(self) -> None:
+        try:
+            self._ui.close()
+        except Exception:
             pass
 
 
@@ -310,10 +346,13 @@ class LensWidget(Gtk.Widget):
 
 
 class LoupeWindow(Gtk.ApplicationWindow):
-    def __init__(self, *, application, texture, on_quit):
+    def __init__(self, *, application, texture, on_quit, on_click_through=None):
         super().__init__(application=application)
         self.texture = texture
         self.on_quit = on_quit
+        # on_click_through(): dismiss the loupe and fire a real click where the
+        # cursor is aimed. If None, a left click just dismisses (no synthesis).
+        self.on_click_through = on_click_through
 
         self.cursor_pos: tuple[float, float] | None = None
         self.zoom = ZOOM_DEFAULT
@@ -343,6 +382,7 @@ class LoupeWindow(Gtk.ApplicationWindow):
         self.add_controller(scroll)
 
         click = Gtk.GestureClick.new()
+        click.set_button(0)  # 0 = listen for any button, branch in the handler
         click.connect("released", self._on_click_released)
         self.add_controller(click)
 
@@ -378,8 +418,14 @@ class LoupeWindow(Gtk.ApplicationWindow):
             self.zoom_out()
         return True
 
-    def _on_click_released(self, _gesture, _n_press, _x, _y):
-        self.on_quit()
+    def _on_click_released(self, gesture, _n_press, _x, _y):
+        button = gesture.get_current_button()
+        # Left click (1): act on the target under the cursor, then dismiss.
+        # Any other button (e.g. right): just dismiss (cancel).
+        if button == 1 and self.on_click_through is not None:
+            self.on_click_through()
+        else:
+            self.on_quit()
 
     def _on_close_request(self, _window):
         self.on_quit()
@@ -452,9 +498,13 @@ def _demo_main():
 # ==== src/main.py ====
 # NOTE: `from X import name` (not `import X`) deliberately — after
 # tools/build.py bundles the src modules into one flat loupe.py, there is no
-# separate `capture`/`ui`/`lifecycle` namespace to qualify against.
+# separate `capture`/`click`/`ui`/`lifecycle` namespace to qualify against.
 
 APP_ID = "dev.andrzey.loupe"
+
+# Delay after hiding the loupe window before firing the synthetic click, so the
+# compositor re-routes pointer focus to the window underneath first.
+CLICK_THROUGH_DELAY_MS = 130
 
 
 def main(argv: list[str]) -> int:
@@ -468,6 +518,16 @@ def main(argv: list[str]) -> int:
         release_pidfile()
         return 1
 
+    # Best-effort virtual pointer for click-through. Created up front so the
+    # compositor registers it before the first click; if uinput/evdev is
+    # unavailable, clicking falls back to plain dismiss and reading still works.
+    try:
+        pointer = VirtualPointer()
+    except Exception as exc:  # noqa: BLE001
+        pointer = None
+        print(f"loupe: click-through unavailable ({exc}); clicks will dismiss.",
+              file=sys.stderr)
+
     app = Gtk.Application(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
     state = {"cleaned_up": False}
 
@@ -475,13 +535,36 @@ def main(argv: list[str]) -> int:
         if state["cleaned_up"]:
             return
         state["cleaned_up"] = True
+        if pointer is not None:
+            pointer.close()
         release_pidfile()
         app.quit()
 
     def on_activate(a):
         install_signal_handlers(cleanup)
-        window = LoupeWindow(application=a, texture=texture, on_quit=cleanup)
+
+        window = LoupeWindow(
+            application=a,
+            texture=texture,
+            on_quit=cleanup,
+            on_click_through=(None if pointer is None else lambda: click_through(window)),
+        )
         window.present()
+
+    def click_through(window):
+        # Hide the loupe so the synthetic click lands on the app underneath,
+        # let pointer focus settle, then click at the (unchanged) cursor spot.
+        window.set_visible(False)
+
+        def fire():
+            try:
+                pointer.click("left")
+            except Exception as exc:  # noqa: BLE001
+                fail("click failed", hint=str(exc))
+            cleanup()
+            return GLib.SOURCE_REMOVE
+
+        GLib.timeout_add(CLICK_THROUGH_DELAY_MS, fire)
 
     app.connect("activate", on_activate)
     return app.run(None)
