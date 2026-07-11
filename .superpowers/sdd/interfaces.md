@@ -34,7 +34,7 @@ class FrameSource:
     def stop(self) -> None: ...  # idempotent
 
 # src/ui.py — pure math + widgets. MUST NOT import portal/framesource.
-LENS_W, LENS_H = 480, 320
+LENS_W, LENS_H = 960, 320   # widened 2x from the original 480x320
 MARGIN = 20            # min gap between lens outer edge and source rect
 RADIUS = 14            # lens corner radius
 BORDER = 2.0           # lens border width (part of lens outer rect!)
@@ -49,7 +49,11 @@ class Layout:
 def compute_layout(cx: float, cy: float, zoom: float, win_w: int, win_h: int) -> Layout: ...
     # HARD GUARANTEE: lens outer rect (lens expanded by BORDER on all sides)
     # never intersects src rect, for every cx,cy inside the window and every
-    # zoom in [ZOOM_MIN, ZOOM_MAX], for win sizes >= 1280x720.
+    # zoom in [ZOOM_MIN, ZOOM_MAX], at ANY window size. Full lens containment
+    # (lens stays inside the window) holds when the window is large enough to
+    # seat the 960-wide lens beside/above/below the source — true at the 1920+
+    # deployment resolution; in a window smaller than the lens the lens may
+    # hang outside the edge (non-overlap still holds).
 
 class LoupeWindow(Gtk.ApplicationWindow):
     def __init__(self, *, application, frame_source, on_quit): ...

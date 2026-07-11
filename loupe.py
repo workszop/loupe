@@ -737,7 +737,7 @@ class FrameSource:
 # Constants (binding, see .superpowers/sdd/interfaces.md)
 # --------------------------------------------------------------------------
 
-LENS_W, LENS_H = 480, 320
+LENS_W, LENS_H = 960, 320
 MARGIN = 20            # min gap between lens outer edge and source rect
 RADIUS = 14             # lens corner radius
 BORDER = 2.0            # lens border width (part of lens outer rect!)
@@ -769,14 +769,17 @@ def compute_layout(cx: float, cy: float, zoom: float, win_w: int, win_h: int) ->
     - Preferred lens placement, in order: right of source, left of source,
       below source, above source — whichever has room for MARGIN + the lens
       dimension without leaving the window.
-    - If none of the four has that much room (only possible in small windows
-      at low zoom, since the lens is large relative to the window), we fall
-      back to whichever direction has the most room. Non-overlap is enforced
-      unconditionally as a final safety clamp: even when the window is too
-      small to keep the lens fully inside it, the lens's BORDER-expanded
-      outer rect is guaranteed to never intersect the source rect — the lens
-      is allowed to hang slightly outside the window edge instead, which is
-      harmless (no camera feedback loop) and bounded by a few pixels.
+    - If none of the four has that much room (possible when the window is too
+      small to seat the lens beside/above/below the source — e.g. the 960-wide
+      lens in a window narrower than ~2600px whose height is also too short at
+      low zoom), we fall back to whichever direction has the most room.
+      Non-overlap is enforced unconditionally as a final safety clamp: even
+      when the window cannot contain the lens, the lens's BORDER-expanded
+      outer rect is guaranteed never to intersect the source rect — the lens
+      is allowed to hang outside the window edge instead, which is harmless
+      (no screencast feedback loop). At the deployment resolution
+      (1920x1132) the lens always stays fully inside the window; the
+      hang-outside path is only reachable in windows smaller than the lens.
     """
     sw = LENS_W / zoom
     sh = LENS_H / zoom
