@@ -1238,7 +1238,7 @@ def main(argv: list[str]) -> int:
             return 1
 
     app = Gtk.Application(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
-    state = {"fs": None, "portal": None, "cleaned_up": False}
+    state = {"fs": None, "portal": None, "cleaned_up": False, "exit_code": None}
 
     def cleanup():
         if state["cleaned_up"]:
@@ -1304,6 +1304,7 @@ def main(argv: list[str]) -> int:
 
         def start_frame_source(node_id, fd, props):
             def on_fs_error(message):
+                state["exit_code"] = 1
                 fail(message)
                 cleanup()
 
@@ -1333,6 +1334,7 @@ def main(argv: list[str]) -> int:
             if code == 1:
                 cleanup()
                 return
+            state["exit_code"] = 1
             fail(message)
             cleanup()
 
@@ -1347,7 +1349,8 @@ def main(argv: list[str]) -> int:
         ps.start(on_ready, on_portal_error)
 
     app.connect("activate", on_activate)
-    return app.run(None)
+    run_result = app.run(None)
+    return state["exit_code"] if state["exit_code"] is not None else run_result
 
 
 if __name__ == "__main__":
