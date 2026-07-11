@@ -1,9 +1,10 @@
 """loupe UI: pure lens-placement math (`compute_layout`) plus the GTK4 widgets
 (`LoupeWindow`, `LensWidget`) that render the freeze-frame magnifier.
 
-Design: the window is fullscreen and opaque, showing a frozen screenshot of the
-desktop at 1:1. A magnifier lens is drawn centered ON the cursor (like a real
-magnifying glass), showing the same screenshot magnified around the cursor.
+Design: the window is maximized and opaque, showing a frozen screenshot of the
+desktop at 1:1 (maximized, not fullscreen — COSMIC animates fullscreen
+enter/exit with a black transition). A magnifier lens is drawn centered ON the
+cursor (like a real magnifying glass), showing the screenshot magnified.
 Because the background is a static snapshot, the lens can sit directly over the
 point it magnifies with no screencast feedback loop. The lens tracks the cursor
 smoothly and is allowed to slide off the screen edge rather than jumping to stay
@@ -90,9 +91,21 @@ class LensWidget(Gtk.Widget):
         if win_w <= 0 or win_h <= 0 or tex is None:
             return
 
-        # Background: the frozen screenshot, stretched to fill the window 1:1.
+        tex_w = tex.get_width()
+        tex_h = tex.get_height()
+        # The window is maximized (covers the work area, below the top panel);
+        # the screenshot covers the whole screen. Shift the screenshot up by the
+        # panel height so window pixel (x, y) shows screen pixel (x, y+offset_y).
+        # (Maximized rather than fullscreen: COSMIC animates fullscreen
+        # enter/exit with a black transition; maximize does not.)
+        offset_y = max(0, tex_h - win_h)
+
+        # Background: the frozen screenshot at native size, shifted up so the
+        # work-area portion fills the window 1:1.
         snapshot.append_scaled_texture(
-            tex, Gsk.ScalingFilter.LINEAR, Graphene.Rect().init(0, 0, win_w, win_h)
+            tex,
+            Gsk.ScalingFilter.LINEAR,
+            Graphene.Rect().init(0, -offset_y, tex_w, tex_h),
         )
 
         if win.cursor_pos is None:
@@ -100,21 +113,22 @@ class LensWidget(Gtk.Widget):
 
         cx, cy = win.cursor_pos
         zoom = win.zoom
-        _, _, lw, lh = (0, 0, LENS_W, LENS_H)
         lx = cx - LENS_W / 2
         ly = cy - LENS_H / 2
 
-        # Magnified layer: the whole (window-space) image scaled by `zoom`,
-        # positioned so the pixel under the cursor stays under the cursor.
+        # Magnified layer: the background scaled by `zoom` about the cursor, so
+        # the pixel under the cursor stays under the cursor.
         dest = Graphene.Rect().init(
-            cx * (1.0 - zoom),
-            cy * (1.0 - zoom),
-            win_w * zoom,
-            win_h * zoom,
+            cx + (0.0 - cx) * zoom,
+            cy + (-offset_y - cy) * zoom,
+            tex_w * zoom,
+            tex_h * zoom,
         )
 
         lens_rounded = Gsk.RoundedRect()
-        lens_rounded.init_from_rect(Graphene.Rect().init(lx, ly, lw, lh), RADIUS)
+        lens_rounded.init_from_rect(
+            Graphene.Rect().init(lx, ly, float(LENS_W), float(LENS_H)), RADIUS
+        )
 
         snapshot.push_rounded_clip(lens_rounded)
         filt = Gsk.ScalingFilter.LINEAR if zoom < 3 else Gsk.ScalingFilter.NEAREST
@@ -170,7 +184,7 @@ class LoupeWindow(Gtk.ApplicationWindow):
         self.osd_until = 0
 
         self.set_decorated(False)
-        self.fullscreen()
+        self.maximize()
 
         self.set_cursor(Gdk.Cursor.new_from_name("crosshair"))
 
