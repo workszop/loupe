@@ -175,6 +175,12 @@ class VirtualPointer:
         )
 
     def click(self, button: str = "left") -> None:
+        """Emit a press/release at the current pointer position.
+
+        The device (and process) must stay alive briefly after this returns:
+        closing the device immediately after the release write destroys the
+        queued events before the compositor reads them and the click is lost.
+        """
         e = self._e
         code = e.BTN_RIGHT if button == "right" else e.BTN_LEFT
         self._ui.write(e.EV_KEY, code, 1)
@@ -507,6 +513,12 @@ APP_ID = "dev.andrzey.loupe"
 # compositor re-routes pointer focus to the window underneath first.
 CLICK_THROUGH_DELAY_MS = 130
 
+# Delay after the synthetic click before closing the uinput device and exiting.
+# Closing (or exiting) immediately after the release write destroys the queued
+# events before the compositor reads them and the click is silently lost —
+# verified against cosmic-comp with tools/click_probe.py.
+CLICK_SETTLE_MS = 150
+
 
 def main(argv: list[str]) -> int:
     if not acquire_pidfile_or_toggle():
@@ -563,6 +575,12 @@ def main(argv: list[str]) -> int:
                 pointer.click("left")
             except Exception as exc:  # noqa: BLE001
                 fail("click failed", hint=str(exc))
+            # Not cleanup() directly: the device must stay open until the
+            # compositor has consumed the click events (see CLICK_SETTLE_MS).
+            GLib.timeout_add(CLICK_SETTLE_MS, settle)
+            return GLib.SOURCE_REMOVE
+
+        def settle():
             cleanup()
             return GLib.SOURCE_REMOVE
 

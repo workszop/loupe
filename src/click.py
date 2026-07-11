@@ -38,6 +38,12 @@ class VirtualPointer:
         )
 
     def click(self, button: str = "left") -> None:
+        """Emit a press/release at the current pointer position.
+
+        The device (and process) must stay alive briefly after this returns:
+        closing the device immediately after the release write destroys the
+        queued events before the compositor reads them and the click is lost.
+        """
         e = self._e
         code = e.BTN_RIGHT if button == "right" else e.BTN_LEFT
         self._ui.write(e.EV_KEY, code, 1)

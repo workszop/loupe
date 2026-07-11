@@ -39,6 +39,12 @@ APP_ID = "dev.andrzey.loupe"
 # compositor re-routes pointer focus to the window underneath first.
 CLICK_THROUGH_DELAY_MS = 130
 
+# Delay after the synthetic click before closing the uinput device and exiting.
+# Closing (or exiting) immediately after the release write destroys the queued
+# events before the compositor reads them and the click is silently lost —
+# verified against cosmic-comp with tools/click_probe.py.
+CLICK_SETTLE_MS = 150
+
 
 def main(argv: list[str]) -> int:
     if not acquire_pidfile_or_toggle():
@@ -95,6 +101,12 @@ def main(argv: list[str]) -> int:
                 pointer.click("left")
             except Exception as exc:  # noqa: BLE001
                 fail("click failed", hint=str(exc))
+            # Not cleanup() directly: the device must stay open until the
+            # compositor has consumed the click events (see CLICK_SETTLE_MS).
+            GLib.timeout_add(CLICK_SETTLE_MS, settle)
+            return GLib.SOURCE_REMOVE
+
+        def settle():
             cleanup()
             return GLib.SOURCE_REMOVE
 
