@@ -11,7 +11,8 @@ your cursor. Move the mouse to read small text/UI anywhere on the frozen
 screen; the lens follows the cursor, and at screen edges it pins in place
 (staying fully visible) while its content keeps tracking — the magnified
 pixel under the cursor is always under the cursor. Ctrl+= / Ctrl+- (or
-scroll) changes zoom. **Left-click** to click the
+scroll) changes zoom; `[` / `]` (or Shift+scroll) changes the lens size.
+**Left-click** to click the
 target under the crosshair on the live app underneath (the loupe closes and
 fires the real click via /dev/uinput). Esc, right-click, or Super+Z cancel.
 

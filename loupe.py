@@ -144,6 +144,8 @@ class VirtualPointer:
 
 LENS_WIDTH_FRAC = 0.8   # lens width as a fraction of the window width
 LENS_H = 576            # lens height in px
+LENS_SIZE_MIN, LENS_SIZE_MAX, LENS_SIZE_STEP = 0.5, 1.2, 1.1
+LENS_SIZE_DEFAULT = 1.0
 RADIUS = 22             # lens corner radius
 BORDER = 2.0            # lens border width
 ZOOM_MIN, ZOOM_MAX, ZOOM_STEP = 1.5, 8.0, 1.25
@@ -175,7 +177,12 @@ def _clamp(value: float, lo: float, hi: float) -> float:
 
 
 def compute_layout(
-    cx: float, cy: float, zoom: float, win_w: float, win_h: float
+    cx: float,
+    cy: float,
+    zoom: float,
+    win_w: float,
+    win_h: float,
+    lens_size: float = LENS_SIZE_DEFAULT,
 ) -> Layout:
     """Place the lens centered on the cursor, clamped inside the viewport.
 
@@ -187,16 +194,17 @@ def compute_layout(
     click-through) intuitive: the lens pins to the edge while its content
     keeps tracking.
     """
-    lens_w = win_w * LENS_WIDTH_FRAC
+    lens_w = min(win_w, win_w * LENS_WIDTH_FRAC * lens_size)
+    lens_h = min(win_h, LENS_H * lens_size)
     lx = _clamp(cx - lens_w / 2, 0.0, max(0.0, win_w - lens_w))
-    ly = _clamp(cy - LENS_H / 2, 0.0, max(0.0, win_h - LENS_H))
+    ly = _clamp(cy - lens_h / 2, 0.0, max(0.0, win_h - lens_h))
     # src maps onto lens at scale `zoom`; solve (cx - sx) * zoom == cx - lx
     # so the cursor's source pixel lands back on the cursor.
     sx = cx - (cx - lx) / zoom
     sy = cy - (cy - ly) / zoom
     return Layout(
-        src=(sx, sy, lens_w / zoom, LENS_H / zoom),
-        lens=(lx, ly, lens_w, float(LENS_H)),
+        src=(sx, sy, lens_w / zoom, lens_h / zoom),
+        lens=(lx, ly, lens_w, lens_h),
     )
 
 
@@ -242,7 +250,7 @@ class LensWidget(Gtk.Widget):
 
         cx, cy = win.cursor_pos
         zoom = win.zoom
-        layout = compute_layout(cx, cy, zoom, win_w, win_h)
+        layout = compute_layout(cx, cy, zoom, win_w, win_h, win.lens_size)
         sx, sy, _sw, _sh = layout.src
         lx, ly, lw, lh = layout.lens
 
@@ -272,13 +280,13 @@ class LensWidget(Gtk.Widget):
         )
 
         if GLib.get_monotonic_time() < win.osd_until:
-            self._draw_osd(snapshot, win_w, zoom)
+            self._draw_osd(snapshot, win_w, win.osd_text)
 
-    def _draw_osd(self, snapshot: Gsk.Snapshot, win_w: int, zoom: float) -> None:
+    def _draw_osd(self, snapshot: Gsk.Snapshot, win_w: int, text: str) -> None:
         """Zoom-level pill, centered near the top of the screen, away from
         wherever the lens is."""
         pill_h = 30
-        layout = self.create_pango_layout(f"{zoom:.2f}x")
+        layout = self.create_pango_layout(text)
         layout.set_alignment(Pango.Alignment.CENTER)
         text_w, _text_h = layout.get_pixel_size()
         pill_w = max(72, text_w + 24)
@@ -310,7 +318,9 @@ class LoupeWindow(Gtk.ApplicationWindow):
 
         self.cursor_pos: tuple[float, float] | None = None
         self.zoom = ZOOM_DEFAULT
+        self.lens_size = LENS_SIZE_DEFAULT
         self.osd_until = 0
+        self.osd_text = f"{self.zoom:.2f}x"
         self._osd_timer = 0
 
         self.set_decorated(False)
@@ -364,13 +374,21 @@ class LoupeWindow(Gtk.ApplicationWindow):
         if name in ("minus", "KP_Subtract"):
             self.zoom_out()
             return True
+        if name in ("bracketleft", "braceleft"):
+            self.lens_smaller()
+            return True
+        if name in ("bracketright", "braceright"):
+            self.lens_larger()
+            return True
         return False
 
     def _on_scroll(self, _controller, _dx, dy):
+        state = _controller.get_current_event_state()
+        resize = bool(state & Gdk.ModifierType.SHIFT_MASK)
         if dy < 0:
-            self.zoom_in()
+            self.lens_larger() if resize else self.zoom_in()
         elif dy > 0:
-            self.zoom_out()
+            self.lens_smaller() if resize else self.zoom_out()
         return True
 
     def _on_click_released(self, gesture, _n_press, _x, _y):
@@ -390,13 +408,26 @@ class LoupeWindow(Gtk.ApplicationWindow):
 
     def zoom_in(self):
         self.zoom = _clamp(self.zoom * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
-        self._bump_osd()
+        self._bump_osd(f"{self.zoom:.2f}x")
 
     def zoom_out(self):
         self.zoom = _clamp(self.zoom / ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
-        self._bump_osd()
+        self._bump_osd(f"{self.zoom:.2f}x")
 
-    def _bump_osd(self):
+    def lens_larger(self):
+        self.lens_size = _clamp(
+            self.lens_size * LENS_SIZE_STEP, LENS_SIZE_MIN, LENS_SIZE_MAX
+        )
+        self._bump_osd(f"Lens {self.lens_size:.0%}")
+
+    def lens_smaller(self):
+        self.lens_size = _clamp(
+            self.lens_size / LENS_SIZE_STEP, LENS_SIZE_MIN, LENS_SIZE_MAX
+        )
+        self._bump_osd(f"Lens {self.lens_size:.0%}")
+
+    def _bump_osd(self, text: str):
+        self.osd_text = text
         self.osd_until = GLib.get_monotonic_time() + _OSD_DURATION_US
         self.lens.queue_draw()
         # One live expiry timer: rescheduling on every zoom step (instead of

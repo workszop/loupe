@@ -7,6 +7,9 @@ import pytest
 
 from src.ui import (
     LENS_H,
+    LENS_SIZE_DEFAULT,
+    LENS_SIZE_MAX,
+    LENS_SIZE_MIN,
     LENS_WIDTH_FRAC,
     ZOOM_DEFAULT,
     ZOOM_MAX,
@@ -44,6 +47,20 @@ def test_lens_width_tracks_window_width():
         layout = compute_layout(win_w / 2, 400, ZOOM_DEFAULT, win_w, WIN_H)
         _lx, _ly, lw, _lh = layout.lens
         assert lw == pytest.approx(LENS_WIDTH_FRAC * win_w)
+
+
+@pytest.mark.parametrize("lens_size", [LENS_SIZE_MIN, 0.75, 1.0, LENS_SIZE_MAX])
+def test_lens_size_scales_both_dimensions(lens_size):
+    layout = compute_layout(960, 566, ZOOM_DEFAULT, WIN_W, WIN_H, lens_size)
+    _lx, _ly, lw, lh = layout.lens
+    assert lw == pytest.approx(LENS_W * lens_size)
+    assert lh == pytest.approx(LENS_H * lens_size)
+
+
+def test_lens_size_is_clamped_to_viewport():
+    layout = compute_layout(320, 200, ZOOM_DEFAULT, 640, 400, LENS_SIZE_MAX)
+    lx, ly, lw, lh = layout.lens
+    assert (lx, ly, lw, lh) == pytest.approx((12.8, 0.0, 614.4, 400.0))
 
 
 @pytest.mark.parametrize("zoom", ZOOMS)
@@ -110,6 +127,9 @@ def test_spot_check_default_zoom():
 def test_constants():
     assert LENS_WIDTH_FRAC == 0.8
     assert LENS_H == 576
+    assert LENS_SIZE_MIN == 0.5
+    assert LENS_SIZE_MAX == 1.2
+    assert LENS_SIZE_DEFAULT == 1.0
     assert ZOOM_MIN == 1.5
     assert ZOOM_MAX == 8.0
     assert ZOOM_DEFAULT == 2.5
