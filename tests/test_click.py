@@ -23,11 +23,8 @@ def test_virtual_pointer_creates_and_closes():
         pytest.skip("python-evdev not installed")
 
     # Constructing succeeds only if /dev/uinput is writable and the capability
-    # set is valid — that is the whole capability the click-through relies on.
-    # We do NOT emit a click here, so the pointer never moves and nothing is
-    # clicked. evdev exposes the created node's own InputDevice; check its name.
-    # Construction succeeds only if /dev/uinput is writable and the capability
-    # set is valid — the whole capability the click-through relies on.
+    # set is valid — the whole capability the click-through relies on. No click
+    # is emitted, so the pointer never moves and nothing is clicked.
     vp = VirtualPointer()
     try:
         assert vp._ui.name == "loupe-virtual-pointer"

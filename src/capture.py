@@ -24,8 +24,11 @@ def grab_screenshot() -> Gdk.Texture:
 
     Raises RuntimeError if the screenshot tool fails or produces no file.
     """
-    tmpdir = tempfile.mkdtemp(prefix="loupe-shot-")
-    try:
+    # The texture holds its own decoded copy, so the temp PNG + dir can be
+    # dropped as soon as it is loaded.
+    with tempfile.TemporaryDirectory(
+        prefix="loupe-shot-", ignore_cleanup_errors=True
+    ) as tmpdir:
         result = subprocess.run(
             [
                 "cosmic-screenshot",
@@ -41,22 +44,11 @@ def grab_screenshot() -> Gdk.Texture:
         path = result.stdout.strip()
         if not path or not os.path.exists(path):
             # Some builds may not echo the path; fall back to newest file.
-            candidates = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir)]
-            candidates = [p for p in candidates if os.path.isfile(p)]
+            candidates = [e.path for e in os.scandir(tmpdir) if e.is_file()]
             if not candidates:
                 raise RuntimeError(
                     "screenshot failed: " + (result.stderr.strip() or "no output file")
                 )
             path = max(candidates, key=os.path.getmtime)
 
-        texture = Gdk.Texture.new_from_filename(path)
-        return texture
-    finally:
-        # Best-effort cleanup of the temp PNG + dir; the texture holds its own
-        # decoded copy so the file is no longer needed.
-        try:
-            for f in os.listdir(tmpdir):
-                os.remove(os.path.join(tmpdir, f))
-            os.rmdir(tmpdir)
-        except OSError:
-            pass
+        return Gdk.Texture.new_from_filename(path)

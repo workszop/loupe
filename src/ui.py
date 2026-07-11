@@ -40,6 +40,18 @@ ZOOM_DEFAULT = 2.5
 _OSD_DURATION_US = 1_200_000  # 1.2s, in GLib monotonic-time microseconds
 
 
+def _rgba(spec: str) -> Gdk.RGBA:
+    color = Gdk.RGBA()
+    color.parse(spec)
+    return color
+
+
+# Parsed once; do_snapshot runs on every mouse motion, so no per-frame parsing.
+_BORDER_COLOR = _rgba("rgba(255,255,255,0.85)")
+_OSD_BG_COLOR = _rgba("rgba(0,0,0,0.72)")
+_OSD_TEXT_COLOR = _rgba("white")
+
+
 @dataclass(frozen=True)
 class Layout:
     src: tuple[float, float, float, float]   # sx, sy, sw, sh — the magnified region
@@ -102,43 +114,38 @@ class LensWidget(Gtk.Widget):
 
         # Background: the frozen screenshot at native size, shifted up so the
         # work-area portion fills the window 1:1.
-        snapshot.append_scaled_texture(
-            tex,
-            Gsk.ScalingFilter.LINEAR,
-            Graphene.Rect().init(0, -offset_y, tex_w, tex_h),
-        )
+        snapshot.append_texture(tex, Graphene.Rect().init(0, -offset_y, tex_w, tex_h))
 
         if win.cursor_pos is None:
             return
 
         cx, cy = win.cursor_pos
         zoom = win.zoom
-        lx = cx - LENS_W / 2
-        ly = cy - LENS_H / 2
+        layout = compute_layout(cx, cy, zoom)
+        sx, sy, _sw, _sh = layout.src
+        lx, ly, lw, lh = layout.lens
 
-        # Magnified layer: the background scaled by `zoom` about the cursor, so
-        # the pixel under the cursor stays under the cursor.
+        # Magnified layer: the whole texture scaled by `zoom`, positioned so
+        # the src rect lands exactly on the lens rect — the pixel under the
+        # cursor stays under the cursor. (sy + offset_y converts the src rect
+        # from window coords to texture coords, as for the background.)
         dest = Graphene.Rect().init(
-            cx + (0.0 - cx) * zoom,
-            cy + (-offset_y - cy) * zoom,
+            lx - sx * zoom,
+            ly - (sy + offset_y) * zoom,
             tex_w * zoom,
             tex_h * zoom,
         )
 
         lens_rounded = Gsk.RoundedRect()
-        lens_rounded.init_from_rect(
-            Graphene.Rect().init(lx, ly, float(LENS_W), float(LENS_H)), RADIUS
-        )
+        lens_rounded.init_from_rect(Graphene.Rect().init(lx, ly, lw, lh), RADIUS)
 
         snapshot.push_rounded_clip(lens_rounded)
         filt = Gsk.ScalingFilter.LINEAR if zoom < 3 else Gsk.ScalingFilter.NEAREST
         snapshot.append_scaled_texture(tex, filt, dest)
         snapshot.pop()
 
-        border_color = Gdk.RGBA()
-        border_color.parse("rgba(255,255,255,0.85)")
         snapshot.append_border(
-            lens_rounded, [BORDER, BORDER, BORDER, BORDER], [border_color] * 4
+            lens_rounded, [BORDER, BORDER, BORDER, BORDER], [_BORDER_COLOR] * 4
         )
 
         if GLib.get_monotonic_time() < win.osd_until:
@@ -157,19 +164,15 @@ class LensWidget(Gtk.Widget):
 
         pill_rounded = Gsk.RoundedRect()
         pill_rounded.init_from_rect(Graphene.Rect().init(px, py, pill_w, pill_h), 10)
-        dark = Gdk.RGBA()
-        dark.parse("rgba(0,0,0,0.72)")
         snapshot.push_rounded_clip(pill_rounded)
-        snapshot.append_color(dark, Graphene.Rect().init(px, py, pill_w, pill_h))
+        snapshot.append_color(_OSD_BG_COLOR, Graphene.Rect().init(px, py, pill_w, pill_h))
         snapshot.pop()
 
-        white = Gdk.RGBA()
-        white.parse("white")
         snapshot.save()
         snapshot.translate(
             Graphene.Point().init(px + (pill_w - text_w) / 2, py + 5)
         )
-        snapshot.append_layout(layout, white)
+        snapshot.append_layout(layout, _OSD_TEXT_COLOR)
         snapshot.restore()
 
 
@@ -185,6 +188,7 @@ class LoupeWindow(Gtk.ApplicationWindow):
         self.cursor_pos: tuple[float, float] | None = None
         self.zoom = ZOOM_DEFAULT
         self.osd_until = 0
+        self._osd_timer = 0
 
         self.set_decorated(False)
         self.maximize()
@@ -224,9 +228,9 @@ class LoupeWindow(Gtk.ApplicationWindow):
         self.cursor_pos = None
         self.lens.queue_draw()
 
-    def _on_key_pressed(self, _controller, keyval, _keycode, _state):
+    def _on_key_pressed(self, _controller, keyval, _keycode, state):
         name = Gdk.keyval_name(keyval)
-        ctrl = bool(_state & Gdk.ModifierType.CONTROL_MASK)
+        ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
 
         if name == "Escape" or (ctrl and name in ("q", "Q")):
             self.on_quit()
@@ -272,11 +276,16 @@ class LoupeWindow(Gtk.ApplicationWindow):
     def _bump_osd(self):
         self.osd_until = GLib.get_monotonic_time() + _OSD_DURATION_US
         self.lens.queue_draw()
-        GLib.timeout_add(1250, self._osd_expired)
+        # One live expiry timer: rescheduling on every zoom step (instead of
+        # stacking a timeout per step) keeps rapid scroll-zoom cheap.
+        if self._osd_timer:
+            GLib.source_remove(self._osd_timer)
+        self._osd_timer = GLib.timeout_add(1250, self._osd_expired)
 
     def _osd_expired(self):
+        self._osd_timer = 0
         self.lens.queue_draw()
-        return False
+        return GLib.SOURCE_REMOVE
 
 
 # --------------------------------------------------------------------------

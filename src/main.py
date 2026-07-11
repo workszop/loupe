@@ -62,12 +62,13 @@ def main(argv: list[str]) -> int:
               file=sys.stderr)
 
     app = Gtk.Application(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
-    state = {"cleaned_up": False}
+    cleaned_up = False
 
     def cleanup():
-        if state["cleaned_up"]:
+        nonlocal cleaned_up
+        if cleaned_up:
             return
-        state["cleaned_up"] = True
+        cleaned_up = True
         if pointer is not None:
             pointer.close()
         release_pidfile()
