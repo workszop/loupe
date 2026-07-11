@@ -2,8 +2,10 @@
 
 Press Super+Z → the screen freezes and a magnifier lens appears centered on
 your cursor. Move the mouse to read small text/UI anywhere on the frozen
-screen; the lens follows the cursor and slides off the screen edge rather than
-jumping. Ctrl+= / Ctrl+- (or scroll) changes zoom. **Left-click** to click the
+screen; the lens follows the cursor, and at screen edges it pins in place
+(staying fully visible) while its content keeps tracking — the magnified
+pixel under the cursor is always under the cursor. Ctrl+= / Ctrl+- (or
+scroll) changes zoom. **Left-click** to click the
 target under the crosshair on the live app underneath (the loupe closes and
 fires the real click via /dev/uinput). Esc, right-click, or Super+Z cancel.
 
@@ -17,7 +19,8 @@ Single self-contained file, generated from `src/` into `~/bin/loupe.py`.
 
 - `src/capture.py` — `grab_screenshot()`: one silent `cosmic-screenshot` into a
   `Gdk.Texture`.
-- `src/ui.py` — `compute_layout()` (lens centered on cursor, no clamping) plus
+- `src/ui.py` — `compute_layout()` (lens centered on cursor, clamped to the
+  viewport, cursor pixel fixed under the cursor) plus
   `LoupeWindow`/`LensWidget`: a fullscreen opaque window that draws the frozen
   screenshot at 1:1 and a magnifier lens centered on the cursor.
 - `src/click.py` — `VirtualPointer`: a uinput virtual pointer that clicks at the

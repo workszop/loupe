@@ -232,20 +232,27 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(value, hi))
 
 
-def compute_layout(cx: float, cy: float, zoom: float) -> Layout:
-    """Place the lens centered on the cursor.
+def compute_layout(
+    cx: float, cy: float, zoom: float, win_w: float, win_h: float
+) -> Layout:
+    """Place the lens centered on the cursor, clamped inside the viewport.
 
-    The source rect (the area being magnified) is LENS_W/zoom x LENS_H/zoom,
-    centered on the cursor. The lens itself is LENS_W x LENS_H, also centered
-    on the cursor. Nothing is clamped to the screen: the lens follows the
-    cursor exactly and may extend past the screen edge (the off-screen part is
-    simply not visible), so movement stays smooth and never jumps.
+    The lens (LENS_W x LENS_H) is centered on the cursor but never extends
+    past the window edge: near an edge it stops moving and stays fully
+    visible. The source rect (LENS_W/zoom x LENS_H/zoom) is chosen so that the
+    magnified image of the pixel under the cursor always renders exactly at
+    the cursor — clamped or not — which keeps aiming (and click-through)
+    intuitive: the lens pins to the edge while its content keeps tracking.
     """
-    sw = LENS_W / zoom
-    sh = LENS_H / zoom
+    lx = _clamp(cx - LENS_W / 2, 0.0, max(0.0, win_w - LENS_W))
+    ly = _clamp(cy - LENS_H / 2, 0.0, max(0.0, win_h - LENS_H))
+    # src maps onto lens at scale `zoom`; solve (cx - sx) * zoom == cx - lx
+    # so the cursor's source pixel lands back on the cursor.
+    sx = cx - (cx - lx) / zoom
+    sy = cy - (cy - ly) / zoom
     return Layout(
-        src=(cx - sw / 2, cy - sh / 2, sw, sh),
-        lens=(cx - LENS_W / 2, cy - LENS_H / 2, float(LENS_W), float(LENS_H)),
+        src=(sx, sy, LENS_W / zoom, LENS_H / zoom),
+        lens=(lx, ly, float(LENS_W), float(LENS_H)),
     )
 
 
@@ -291,7 +298,7 @@ class LensWidget(Gtk.Widget):
 
         cx, cy = win.cursor_pos
         zoom = win.zoom
-        layout = compute_layout(cx, cy, zoom)
+        layout = compute_layout(cx, cy, zoom, win_w, win_h)
         sx, sy, _sw, _sh = layout.src
         lx, ly, lw, lh = layout.lens
 
@@ -322,8 +329,8 @@ class LensWidget(Gtk.Widget):
             self._draw_osd(snapshot, win_w, zoom)
 
     def _draw_osd(self, snapshot: Gsk.Snapshot, win_w: int, zoom: float) -> None:
-        """Zoom-level pill, centered near the top of the screen so it stays
-        visible regardless of where the (possibly off-screen) lens is."""
+        """Zoom-level pill, centered near the top of the screen, away from
+        wherever the lens is."""
         pill_h = 30
         layout = self.create_pango_layout(f"{zoom:.2f}x")
         layout.set_alignment(Pango.Alignment.CENTER)
