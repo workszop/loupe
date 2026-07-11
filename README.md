@@ -60,4 +60,5 @@ Shortcuts (a second Super+Z toggles it off).
   invocation.
 - Assumes 100% display scale (window ≈ screenshot, 1:1 minus panel). HiDPI would
   need a scale factor in the lens math.
-- Lens is 1440×480 at 2.5× default zoom (1.5×–8× range).
+- Lens is 80% of the screen width × 576px, at 2.5× default zoom (1.5×–8×
+  range), always LINEAR-filtered (NEAREST at high zoom read as pixelization).

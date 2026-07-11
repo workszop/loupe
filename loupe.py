@@ -142,7 +142,8 @@ class VirtualPointer:
 # Constants
 # --------------------------------------------------------------------------
 
-LENS_W, LENS_H = 1440, 480
+LENS_WIDTH_FRAC = 0.8   # lens width as a fraction of the window width
+LENS_H = 576            # lens height in px
 RADIUS = 22             # lens corner radius
 BORDER = 2.0            # lens border width
 ZOOM_MIN, ZOOM_MAX, ZOOM_STEP = 1.5, 8.0, 1.25
@@ -178,22 +179,24 @@ def compute_layout(
 ) -> Layout:
     """Place the lens centered on the cursor, clamped inside the viewport.
 
-    The lens (LENS_W x LENS_H) is centered on the cursor but never extends
-    past the window edge: near an edge it stops moving and stays fully
-    visible. The source rect (LENS_W/zoom x LENS_H/zoom) is chosen so that the
-    magnified image of the pixel under the cursor always renders exactly at
-    the cursor — clamped or not — which keeps aiming (and click-through)
-    intuitive: the lens pins to the edge while its content keeps tracking.
+    The lens (LENS_WIDTH_FRAC of the window width x LENS_H) is centered on
+    the cursor but never extends past the window edge: near an edge it stops
+    moving and stays fully visible. The source rect (lens size / zoom) is
+    chosen so that the magnified image of the pixel under the cursor always
+    renders exactly at the cursor — clamped or not — which keeps aiming (and
+    click-through) intuitive: the lens pins to the edge while its content
+    keeps tracking.
     """
-    lx = _clamp(cx - LENS_W / 2, 0.0, max(0.0, win_w - LENS_W))
+    lens_w = win_w * LENS_WIDTH_FRAC
+    lx = _clamp(cx - lens_w / 2, 0.0, max(0.0, win_w - lens_w))
     ly = _clamp(cy - LENS_H / 2, 0.0, max(0.0, win_h - LENS_H))
     # src maps onto lens at scale `zoom`; solve (cx - sx) * zoom == cx - lx
     # so the cursor's source pixel lands back on the cursor.
     sx = cx - (cx - lx) / zoom
     sy = cy - (cy - ly) / zoom
     return Layout(
-        src=(sx, sy, LENS_W / zoom, LENS_H / zoom),
-        lens=(lx, ly, float(LENS_W), float(LENS_H)),
+        src=(sx, sy, lens_w / zoom, LENS_H / zoom),
+        lens=(lx, ly, lens_w, float(LENS_H)),
     )
 
 
@@ -258,8 +261,10 @@ class LensWidget(Gtk.Widget):
         lens_rounded.init_from_rect(Graphene.Rect().init(lx, ly, lw, lh), RADIUS)
 
         snapshot.push_rounded_clip(lens_rounded)
-        filt = Gsk.ScalingFilter.LINEAR if zoom < 3 else Gsk.ScalingFilter.NEAREST
-        snapshot.append_scaled_texture(tex, filt, dest)
+        # Always LINEAR: NEAREST above 3x was tried and reads as heavy
+        # pixelization; smooth interpolation is easier on the eyes even
+        # though no extra detail exists beyond the screenshot's pixels.
+        snapshot.append_scaled_texture(tex, Gsk.ScalingFilter.LINEAR, dest)
         snapshot.pop()
 
         snapshot.append_border(

@@ -1,13 +1,13 @@
-"""Tests for compute_layout: the lens is centered on the cursor but clamped to
-stay fully inside the viewport. The magnified pixel under the cursor stays
-under the cursor everywhere — when the lens hits an edge it stops moving and
-the source region shifts instead.
+"""Tests for compute_layout: the lens (80% of window width x LENS_H) is
+centered on the cursor but clamped to stay fully inside the viewport. The
+magnified pixel under the cursor stays under the cursor everywhere — when the
+lens hits an edge it stops moving and the source region shifts instead.
 """
 import pytest
 
 from src.ui import (
     LENS_H,
-    LENS_W,
+    LENS_WIDTH_FRAC,
     ZOOM_DEFAULT,
     ZOOM_MAX,
     ZOOM_MIN,
@@ -16,6 +16,7 @@ from src.ui import (
 )
 
 WIN_W, WIN_H = 1920, 1132  # the maximized work area on the target machine
+LENS_W = LENS_WIDTH_FRAC * WIN_W  # 1536 on the target machine
 
 ZOOMS = [ZOOM_MIN, 2.0, ZOOM_DEFAULT, 4.0, ZOOM_MAX]
 POSITIONS = [
@@ -36,6 +37,13 @@ def test_lens_stays_inside_viewport(cx, cy, zoom):
     assert (lw, lh) == (LENS_W, LENS_H)
     assert 0 <= lx <= WIN_W - LENS_W
     assert 0 <= ly <= WIN_H - LENS_H
+
+
+def test_lens_width_tracks_window_width():
+    for win_w in (1280, 1920, 3440):
+        layout = compute_layout(win_w / 2, 400, ZOOM_DEFAULT, win_w, WIN_H)
+        _lx, _ly, lw, _lh = layout.lens
+        assert lw == pytest.approx(LENS_WIDTH_FRAC * win_w)
 
 
 @pytest.mark.parametrize("zoom", ZOOMS)
@@ -80,28 +88,28 @@ def test_clamped_at_top_left_corner():
     assert (sx, sy) == (0.0, 0.0)
 
 
-def test_undersized_window_pins_lens_to_origin():
-    # Window smaller than the lens (e.g. dev harness): degrade gracefully by
-    # pinning to the top-left rather than producing negative clamp bounds.
+def test_undersized_window_pins_lens_vertically():
+    # Window shorter than the lens (e.g. dev harness): degrade gracefully by
+    # pinning to the top rather than producing negative clamp bounds.
     layout = compute_layout(300, 200, ZOOM_DEFAULT, 640, 400)
-    lx, ly, _, _ = layout.lens
-    assert (lx, ly) == (0.0, 0.0)
+    _lx, ly, _, _ = layout.lens
+    assert ly == 0.0
 
 
-def test_spot_check_default_zoom_centered():
-    # cursor at (960, 566), zoom 2.5 — far from edges, so identical to the
-    # old unclamped placement:
-    # sw = 1440/2.5 = 576, sh = 480/2.5 = 192
-    # src centered: (960-288, 566-96) = (672, 470)
-    # lens centered: (960-720, 566-240) = (240, 326)
+def test_spot_check_default_zoom():
+    # cursor at (960, 566), zoom 2.5, window 1920x1132:
+    # lens = 1536x576, centered fits: lx = clamp(960-768, 0, 384) = 192,
+    #                                 ly = clamp(566-288, 0, 556) = 278
+    # src: sw = 1536/2.5 = 614.4, sh = 576/2.5 = 230.4
+    #      sx = 960 - (960-192)/2.5 = 652.8, sy = 566 - (566-278)/2.5 = 450.8
     layout = compute_layout(960, 566, 2.5, WIN_W, WIN_H)
-    assert layout.src == pytest.approx((672.0, 470.0, 576.0, 192.0))
-    assert layout.lens == pytest.approx((240.0, 326.0, 1440.0, 480.0))
+    assert layout.src == pytest.approx((652.8, 450.8, 614.4, 230.4))
+    assert layout.lens == pytest.approx((192.0, 278.0, 1536.0, 576.0))
 
 
 def test_constants():
-    assert LENS_W == 1440
-    assert LENS_H == 480
+    assert LENS_WIDTH_FRAC == 0.8
+    assert LENS_H == 576
     assert ZOOM_MIN == 1.5
     assert ZOOM_MAX == 8.0
     assert ZOOM_DEFAULT == 2.5
