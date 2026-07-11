@@ -1,5 +1,11 @@
 # loupe — freeze-frame screen magnifier for COSMIC/Wayland
 
+[![CI](https://github.com/workszop/loupe/actions/workflows/ci.yml/badge.svg)](https://github.com/workszop/loupe/actions/workflows/ci.yml)
+![Platform](https://img.shields.io/badge/platform-COSMIC%2FWayland-4a86cf)
+![Python](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)
+
+![The loupe lens magnifying small text on a frozen screen](docs/screenshot.png)
+
 Press Super+Z → the screen freezes and a magnifier lens appears centered on
 your cursor. Move the mouse to read small text/UI anywhere on the frozen
 screen; the lens follows the cursor, and at screen edges it pins in place

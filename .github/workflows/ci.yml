@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GTK4 GI bindings and pytest
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi gir1.2-gtk-4.0 gir1.2-pango-1.0 gir1.2-graphene-1.0 \
+            python3-pytest
+
+      - name: Run tests
+        run: python3 -m pytest -q
+        # test_click self-skips: /dev/uinput is not writable on runners.
+
+      - name: Bundle is up to date
+        run: |
+          python3 tools/build.py
+          git diff --exit-code loupe.py
