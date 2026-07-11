@@ -68,6 +68,26 @@ def delete_token(token_path: str) -> None:
         pass
 
 
+DBUS_ERROR_KEY = "_dbus_error"
+
+
+def should_retry_stale_token(step: str, code: int, token_supplied: bool,
+                              already_retried: bool) -> bool:
+    """Whether a failure response should trigger the stale-token retry.
+
+    Per the spec, ONLY the SelectSources response carries a restore_token,
+    so the retry (delete token + restart flow once from CreateSession
+    without a token) applies exclusively there: code == 2, a restore_token
+    was supplied, and we haven't already retried once.
+    """
+    return (
+        step == "SelectSources"
+        and code == 2
+        and token_supplied
+        and not already_retried
+    )
+
+
 def build_select_sources_options(restore_token: str | None) -> dict:
     """Options dict for SelectSources, per Global constraints:
     types=1 (MONITOR), multiple=false, cursor_mode=1 (HIDDEN), persist_mode=2,
@@ -136,15 +156,22 @@ class PortalScreenCast:
             return True
         if code == 0:
             return False
+        if DBUS_ERROR_KEY in results:
+            # Transport-level failure, not a portal response: never retries
+            # and never touches the persisted token.
+            on_error(2, results[DBUS_ERROR_KEY])
+            return True
         # code == 2, or any other non-zero code: treat as portal error, but
-        # if a restore_token was in play, retry the whole flow once without it.
-        if restore_token is not None and not self._retried_without_token:
+        # the stale-token retry applies only to the SelectSources response
+        # (the only call that sends restore_token).
+        if should_retry_stale_token(step_name, code, restore_token is not None,
+                                     self._retried_without_token):
             self._retried_without_token = True
             delete_token(self._token_path)
             self._close_session_quietly()
             self._start_flow(None, on_ready, on_error)
             return True
-        message = results.get("_dbus_error", f"{step_name} failed: code={code}")
+        message = f"{step_name} failed: code={code}"
         on_error(2, message)
         return True
 

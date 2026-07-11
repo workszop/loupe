@@ -71,3 +71,35 @@ def test_select_sources_options_token_present_when_saved():
     opts = portal.build_select_sources_options("saved-token")
     assert "restore_token" in opts
     assert opts["restore_token"].unpack() == "saved-token"
+
+
+# --- stale-token retry decision ---
+
+def test_should_retry_select_sources_code2_token_first_time():
+    assert portal.should_retry_stale_token("SelectSources", 2, True, False) is True
+
+
+def test_should_not_retry_select_sources_already_retried():
+    assert portal.should_retry_stale_token("SelectSources", 2, True, True) is False
+
+
+def test_should_not_retry_create_session_code2_token():
+    assert portal.should_retry_stale_token("CreateSession", 2, True, False) is False
+
+
+def test_should_not_retry_start_code2_token():
+    assert portal.should_retry_stale_token("Start", 2, True, False) is False
+
+
+def test_should_not_retry_select_sources_no_token():
+    assert portal.should_retry_stale_token("SelectSources", 2, False, False) is False
+
+
+def test_should_not_retry_dbus_exception_marker():
+    # D-Bus transport exceptions use code -1 as their sentinel and must
+    # never trigger a retry, regardless of step or token presence.
+    assert portal.should_retry_stale_token("SelectSources", -1, True, False) is False
+
+
+def test_should_not_retry_cancel_code1():
+    assert portal.should_retry_stale_token("SelectSources", 1, True, False) is False
