@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Single-file bundler: concatenates src/{lifecycle,portal,framesource,ui,main}.py
+"""Single-file bundler: concatenates src/{lifecycle,capture,ui,main}.py
 into loupe.py at the repo root.
 
 Deterministic / idempotent: run repeatedly on unchanged sources, byte-identical
 output. Strips each module's shebang/docstring/imports and consolidates all
 `gi.require_version` calls plus a single `from gi.repository import ...` at
-the top (module-conditional imports, e.g. framesource's try/except GstApp /
-GstVideo probes, are left in place since they can't be safely hoisted).
+the top (any module-conditional try/except import probes are left in place
+since they can't be safely hoisted).
 
 Usage: python3 tools/build.py
 """
@@ -19,7 +19,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 OUTPUT = ROOT / "loupe.py"
 
-MODULE_ORDER = ["lifecycle", "portal", "framesource", "ui", "main"]
+MODULE_ORDER = ["lifecycle", "capture", "ui", "main"]
 SIBLING_NAMES = set(MODULE_ORDER)
 
 ENTRYPOINT_MODULE = "main"  # its docstring becomes loupe.py's; its __main__
