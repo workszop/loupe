@@ -1,6 +1,4 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-.superpowers/sdd/*report*
-.superpowers/sdd/progress.md
-.superpowers/sdd/*.diff
+.superpowers/
