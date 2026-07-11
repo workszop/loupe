@@ -235,8 +235,15 @@ class LensWidget(Gtk.Widget):
 
     def _draw_osd(self, snapshot: Gsk.Snapshot, lx: float, ly: float, zoom: float) -> None:
         pad = 8
-        pill_w, pill_h = 64, 28
+        pill_h = 28
         px, py = lx + pad, ly + pad
+
+        layout = self.create_pango_layout(f"{zoom:.2f}x")
+        layout.set_alignment(Pango.Alignment.CENTER)
+        text_w, _text_h = layout.get_pixel_size()
+        pill_w = max(64, text_w + 20)
+        white = Gdk.RGBA()
+        white.parse("white")
 
         pill_rounded = Gsk.RoundedRect()
         pill_rounded.init_from_rect(Graphene.Rect().init(px, py, pill_w, pill_h), 8)
@@ -245,11 +252,6 @@ class LensWidget(Gtk.Widget):
         snapshot.push_rounded_clip(pill_rounded)
         snapshot.append_color(dark, Graphene.Rect().init(px, py, pill_w, pill_h))
         snapshot.pop()
-
-        layout = self.create_pango_layout(f"{zoom:.2g}x")
-        layout.set_alignment(Pango.Alignment.CENTER)
-        white = Gdk.RGBA()
-        white.parse("white")
 
         snapshot.save()
         snapshot.translate(Graphene.Point().init(px + 10, py + 5))
@@ -278,6 +280,8 @@ class LoupeWindow(Gtk.ApplicationWindow):
 
         self.lens = LensWidget(self)
         self.set_child(self.lens)
+
+        self.connect("close-request", self._on_close_request)
 
         motion = Gtk.EventControllerMotion.new()
         motion.connect("motion", self._on_motion)
@@ -334,6 +338,10 @@ class LoupeWindow(Gtk.ApplicationWindow):
 
     def _on_click_released(self, _gesture, _n_press, _x, _y):
         self.on_quit()
+
+    def _on_close_request(self, _window):
+        self.on_quit()
+        return True
 
     # -- zoom -----------------------------------------------------------
 
